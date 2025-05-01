@@ -4,7 +4,7 @@ from bson.objectid import ObjectId
 import time
 from datetime import datetime, timedelta
 import config
-
+mongo_key = st.secrets['mongokey']
 class Database:
     def __init__(self):
         """Initialize database connection"""
