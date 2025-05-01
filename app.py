@@ -31,7 +31,7 @@ db = init_database()
 
 # Check authentication status
 if not is_authenticated():
-    st.switch_page("pages/Login.py")
+    st.switch_page("pages/0_Login.py")
 
 # App title and description
 st.title('🍎 :red[NutriPal] - Your AI-Powered Nutrition Coach')
