@@ -8,7 +8,7 @@ import config
 class Database:
     def __init__(self):
         """Initialize database connection"""
-        self.connection_string = f"mongodb+srv://reubenjoseph010:{st.secrets['mongokey']}@nutripal.7qogb33.mongodb.net/?retryWrites=true&w=majority&appName=nutripalcluster"
+        self.connection_string = f"mongodb+srv://atifshaik538:{mongo_key}@nutripalcluster.vq56uyq.mongodb.net/?retryWrites=true&w=majority&appName=nutripalcluster"
         self.client = MongoClient(self.connection_string)
         self.db = self.client.nutripal
         
