@@ -26,7 +26,7 @@ st.markdown(no_sidebar_style, unsafe_allow_html=True)
 # Check authentication
 if not is_authenticated():
     st.warning("Please login to access this page")
-    st.switch_page("pages/Login.py")
+    st.switch_page("pages/s0_Login.py")
 
 # Initialize database
 @st.cache_resource

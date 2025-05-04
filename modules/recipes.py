@@ -1,203 +1,127 @@
 import streamlit as st
-from modules.models import generate_text, classify_food_image
-from langchain.chains import RetrievalQA
-from modules.models import load_text_model, create_qdrant_from_text
+import asyncio
+import re
+from langchain_community.chains import RetrievalQA
+from modules.models import get_text_model, create_qdrant_from_text, generate_text, classify_food_image
+from modules.db import Database
+from config import Settings
 import time
 
+
+async def generate_recipe_async(prompt):
+    try:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, generate_text, prompt)
+    except Exception as e:
+        st.error(f"Async generation error: {str(e)}")
+        return ""
+
+
 def generate_dish_from_image(image_data, health_history, kitchen_ingredients, eco_friendly=False, ignore_health=False):
-    """
-    Generate a recipe based on image ingredients, health history, and preferences
-    
-    Args:
-        image_data: Image bytes for food classification
-        health_history: User's health history string
-        kitchen_ingredients: Additional ingredients from kitchen (string)
-        eco_friendly: Boolean flag for water footprint consideration
-        ignore_health: Boolean flag to prioritize eco-friendliness over health
-        
-    Returns:
-        Recipe as a string
-    """
     start_time = time.time()
-    
-    # Classify ingredients in the image
+    db = Database()
+
+    # Classify image ingredients
     image_ingredients = []
     if image_data:
-        image_classification = classify_food_image(image_data)
-        image_ingredients = [item['label'] for item in image_classification]
-    
-    # Create retrieval-based QA system with user's health history
+        classification = classify_food_image(image_data)
+        image_ingredients = [item['label'] for item in classification]
+
+    # Create context-aware QA system
     vectorstore = create_qdrant_from_text(health_history)
-    llm = load_text_model()
-    
+    llm = get_text_model()
+
     qa = RetrievalQA.from_chain_type(
         llm=llm,
-        chain_type="stuff",
+        chain_type="map_reduce",
         retriever=vectorstore.as_retriever()
     )
-    
-    # Combine all ingredients
-    all_ingredients = ' '.join(image_ingredients)
-    if kitchen_ingredients:
-        all_ingredients += ' ' + kitchen_ingredients
-    
-    # Create appropriate prompt based on user preferences
-    if not ignore_health and not eco_friendly:
-        prompt = f"""
-        Create a detailed recipe using all available ingredients, considering my health conditions as a top priority. Ensure that the dish not only includes all ingredients but also contributes positively to my well-being in line with my health objectives.
 
-        AVAILABLE INGREDIENTS: {all_ingredients}.
+    # Build ingredients list
+    all_ingredients = ' '.join(image_ingredients + [kitchen_ingredients])
 
-        MY HEALTH: {health_history}.
+    # Generate appropriate prompt
+    prompt_template = build_prompt_template(
+        all_ingredients,
+        health_history,
+        eco_friendly,
+        ignore_health
+    )
 
-        Please craft a recipe with the available ingredients. If any ingredients might be harmful due to my health conditions, please indicate so and skip them. You have the freedom to remove any harmful ingredients and adjust the recipe accordingly. Additionally, feel free to incorporate ingredients that could benefit my health, but kindly specify them before providing the recipe instructions.
+    # Async generation
+    recipe = asyncio.run(generate_recipe_async(prompt_template))
 
-        In case there isn't enough information, please create a generalized method for ingredients and health condition and try to give a generalized recipe.
+    # Update user history
+    if st.session_state.get('user_id'):
+        db.update_user_food_history(
+            st.session_state.user_id,
+            ', '.join(image_ingredients)
+        )
 
-        \n Before Giving Recipe do give me a list of selected ingredients, rejected ingredients and additional ingredients. Also Give a catchy DISH name!
-        """
-    elif eco_friendly and not ignore_health:
-        prompt = f"""
-        AVAILABLE INGREDIENTS: {all_ingredients}.\n
-        MY HEALTH: {health_history}.\n  
-
-        Use the available ingredients to create a recipe that not only aligns with my health objectives but also has a low water footprint. 
-        Please ensure that the dish is not only healthy but also environmentally friendly. 
-        If any ingredients have a high water footprint, please avoid them, even if it's beneficial for my health history. 
-        You have the freedom to remove any high water footprint consuming ingredients and adjust the recipe accordingly. 
-        Additionally, feel free to incorporate ingredients that could benefit my health as well as it has low water footprint, 
-        but kindly specify them before providing the recipe instructions.\n
-
-        If you wanna do trade off between health and water footprint, "Choose Water Footprint" and specify the trade off and the reason for the trade off.
-        """
-    else:
-        prompt = f"""
-        AVAILABLE INGREDIENTS: {all_ingredients}.\n
-
-        Use the available ingredients to create a recipe that has a low water footprint. 
-        Please ensure that the dish is highly environmentally friendly. 
-        If any ingredients have a high water footprint, please avoid them. 
-        You have the freedom to remove any high water footprint consuming ingredients and adjust the recipe accordingly. 
-        Additionally, feel free to incorporate ingredients that could benefit Environment if it has low water footprint, 
-        but kindly specify them before providing the recipe instructions.\n
-        Additionally before giving me recipe do give me a list of rejected ingredients and reason for it!
-        """
-    
-    # Generate recipe
-    recipe = qa.run(prompt)
-    
-    # Log performance
-    end_time = time.time()
-    st.session_state.last_recipe_generation_time = end_time - start_time
-    
+    # Performance logging
+    st.session_state.last_gen_time = time.time() - start_time
     return recipe
 
-def get_nutrition_info(recipe):
+
+def build_prompt_template(ingredients, health, eco, ignore_health):
+    base = f"""INGREDIENTS: {ingredients}
+    HEALTH PROFILE: {health}
     """
-    Extract nutritional information from a recipe
-    
-    Args:
-        recipe: Recipe text to analyze
-        
-    Returns:
-        Nutritional information as a string
-    """
-    prompt = f"""
-    RECIPE: {recipe}.
-    \nYou've been provided with a recipe for a dish. Your task is to extract key nutritional information from the given recipe.
 
-    Extract the amounts of proteins, carbohydrates, and fat content present in the provided recipe.
+    if ignore_health:
+        return base + """Create an environmentally-friendly recipe prioritizing:
+        1. Lowest water footprint
+        2. Seasonal availability
+        3. Local sourcing
+        Explain any eco-friendly substitutions."""
 
-    Note that you are not allowed to add or remove any ingredients from the recipe, nor manipulate the preparation steps.
+    if eco:
+        return base + """Create a recipe that balances:
+        1. Health requirements
+        2. Environmental impact
+        Highlight both aspects in your response."""
 
-    Additionally, extract all the vitamins and minerals content from the recipe.
+    return base + """Create a health-optimized recipe considering:
+        1. Nutritional needs
+        2. Dietary restrictions
+        3. Medical conditions
+        Explain health benefits of key ingredients."""
 
-    Your output should be:
-    - Amounts of protein content present in the recipe.
-    - Amounts of carbohydrate content present in the recipe.
-    - Amounts of fat content present in the recipe.
-    - Amounts of vitamins and minerals content present in the recipe.
-    - Total calorie content
 
-    Ensure that all nutritional information is accurately calculated and presented.\n
-    Output should only be Nutritional content as specified above, \n don't include Instructions and Ingredients in Output
-    """
-    
-    nutrition_info = generate_text(prompt)
-    return nutrition_info
-
-def parse_nutrition_values(nutrition_text):
-    """
-    Parse nutrition text to extract numerical values for database storage
-    
-    Args:
-        nutrition_text: Nutrition information text
-        
-    Returns:
-        Dictionary with nutrition values
-    """
-    # Default values
-    nutrition = {
-        "calories": 0,
-        "protein": 0,
-        "carbs": 0,
-        "fat": 0
+def parse_nutrition_values(text):
+    nutrients = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    patterns = {
+        'calories': r'calories?:\s*(\d+)',
+        'protein': r'protein:\s*(\d+)g',
+        'carbs': r'carbs?:\s*(\d+)g',
+        'fat': r'fat:\s*(\d+)g'
     }
-    
+
     try:
-        # Simple parsing - extract numbers followed by g or calories
-        lines = nutrition_text.strip().split('\n')
-        for line in lines:
-            line = line.lower()
-            
-            # Parse calories
-            if "calorie" in line or "calories" in line:
-                # Find numbers in the line
-                import re
-                numbers = re.findall(r'\d+', line)
-                if numbers:
-                    # Use the first number as calories
-                    nutrition["calories"] = int(numbers[0])
-            
-            # Parse macronutrients
-            if "protein" in line:
-                numbers = re.findall(r'\d+', line)
-                if numbers:
-                    nutrition["protein"] = int(numbers[0])
-            
-            if "carbohydrate" in line or "carbs" in line:
-                numbers = re.findall(r'\d+', line)
-                if numbers:
-                    nutrition["carbs"] = int(numbers[0])
-                    
-            if "fat" in line:
-                numbers = re.findall(r'\d+', line)
-                if numbers:
-                    nutrition["fat"] = int(numbers[0])
-    
+        for key, pattern in patterns.items():
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                nutrients[key] = int(match.group(1))
     except Exception as e:
-        st.warning(f"Error parsing nutrition values: {e}")
-    
-    return nutrition
+        st.error(f"Nutrition parsing error: {str(e)}")
+
+    return nutrients
+
 
 def predict_next_meal(food_history):
-    """
-    Predict next meal based on user's food history
-    
-    Args:
-        food_history: String with user's food history
-        
-    Returns:
-        Predicted next meal as a string
-    """
-    prompt = f"""Food Consumption History: {food_history}
+    prompt = f"""Analyze this food history and predict the next meal:
+    {food_history}
 
-    .\nYou are given data of Food consumption history of a person. You have to predict the next meal of the person based on the data given.
-    Even if information provided is less for next meal prediction do create a generalized prediction of next meal.
-    \n Prediction depends upon, food items consumed in order and frequency of food items's consumed. Like a Sequential task.
-    \nYou're free to add new meal as well as recommend some old meal.
-    \n Output should be a meal name or a list of meal names.
-    \n First answer which meal would be next meal and then proceed with your response"""
-    
-    prediction = generate_text(prompt)
-    return prediction
+    Consider:
+    - Meal timing patterns
+    - Nutritional balance
+    - User preferences
+    - Recent ingredients
+
+    Return: 1 suggested meal with brief justification."""
+
+    try:
+        return generate_text(prompt)
+    except Exception as e:
+        st.error("Prediction failed. Please try again.")
+        return ""

@@ -40,22 +40,23 @@ LOW_WATER_FOOTPRINT_FOODS = {
     "peas": 1800,
 }
 
+
 def check_eco_friendly_ingredients(ingredients_list):
     """
     Check ingredients for water footprint
-    
+
     Args:
         ingredients_list: List of ingredients
-        
+
     Returns:
         Tuple of (eco_friendly_ingredients, high_footprint_ingredients)
     """
     eco_friendly = []
     high_footprint = []
-    
+
     for ingredient in ingredients_list:
         ingredient_lower = ingredient.lower()
-        
+
         # Check if this ingredient is in our high water footprint list
         for food, _ in HIGH_WATER_FOOTPRINT_FOODS.items():
             if food in ingredient_lower:
@@ -67,16 +68,17 @@ def check_eco_friendly_ingredients(ingredients_list):
                 if food in ingredient_lower:
                     eco_friendly.append(ingredient)
                     break
-    
+
     return eco_friendly, high_footprint
+
 
 def get_alternative_ingredients(high_footprint_ingredient):
     """
     Suggest alternative ingredients with lower water footprint
-    
+
     Args:
         high_footprint_ingredient: The high water footprint ingredient
-        
+
     Returns:
         List of alternative ingredients
     """
@@ -98,90 +100,98 @@ def get_alternative_ingredients(high_footprint_ingredient):
         "asparagus": ["broccoli", "green beans", "zucchini"],
         "vanilla": ["cinnamon", "almond extract", "lemon zest"],
     }
-    
+
     for food in HIGH_WATER_FOOTPRINT_FOODS.keys():
         if food in high_footprint_ingredient.lower():
             return alternatives.get(food, ["No specific alternatives found"])
-    
+
     return ["No specific alternatives found"]
+
 
 def parse_ingredients_from_recipe(recipe_text):
     """
     Parse ingredients from recipe text
-    
+
     Args:
         recipe_text: Full recipe text
-        
+
     Returns:
         List of ingredients
     """
     ingredients = []
-    
+
     # Look for common ingredient section headers
     ingredient_section_patterns = [
         r"(?:INGREDIENTS:|Ingredients:|ingredients:)[\s\S]*?(?=\n\s*\n|\n\s*(?:INSTRUCTIONS|Instructions|METHOD|Method|DIRECTIONS|Directions|STEPS|Steps))",
         r"(?:\*\*Ingredients\*\*|\*Ingredients\*)[\s\S]*?(?=\n\s*\n|\n\s*(?:\*\*Instructions\*\*|\*Instructions\*|\*\*Method\*\*|\*Method\*))",
     ]
-    
+
     ingredient_section = None
     for pattern in ingredient_section_patterns:
         match = re.search(pattern, recipe_text)
         if match:
             ingredient_section = match.group(0)
             break
-    
+
     if ingredient_section:
         # Extract ingredients with common list formats
         ingredient_lines = re.findall(r'(?:^|\n)\s*(?:[-•*]|\d+\.|\d+\)) (.*?)(?:\n|$)', ingredient_section)
         ingredients.extend(ingredient_lines)
-        
+
         # If no list format found, try splitting by newlines and filtering
         if not ingredients:
             lines = ingredient_section.split('\n')
             for line in lines[1:]:  # Skip the header line
                 line = line.strip()
-                if line and not line.startswith(('Instructions', 'INSTRUCTIONS', 'Method', 'METHOD', 'Directions', 'DIRECTIONS')):
+                if line and not line.startswith(
+                        ('Instructions', 'INSTRUCTIONS', 'Method', 'METHOD', 'Directions', 'DIRECTIONS')):
                     ingredients.append(line)
-    
+
     # If we didn't find an ingredient section, look for bullet points or numbered lists
     if not ingredients:
         ingredient_lines = re.findall(r'(?:^|\n)\s*(?:[-•*]|\d+\.|\d+\)) (.*?)(?:\n|$)', recipe_text)
-        
+
         # Filter out likely non-ingredient lines
         for line in ingredient_lines:
-            if not any(word in line.lower() for word in ["instructions", "method", "directions", "steps", "preheat", "bake", "simmer", "stir"]):
+            if not any(word in line.lower() for word in
+                       ["instructions", "method", "directions", "steps", "preheat", "bake", "simmer", "stir"]):
                 ingredients.append(line)
-    
+
     # Clean up ingredients
     cleaned_ingredients = []
     for ingredient in ingredients:
         # Remove quantity and measurements, keeping the food item
-        food_item = re.sub(r'^[\d\s/¼½¾\-]+\s*(?:cup|cups|tablespoon|tablespoons|tbsp|tsp|teaspoon|teaspoons|gram|grams|g|kg|ml|oz|ounce|ounces|lb|pound|pounds|pinch|dash)\s+of\s+', '', ingredient)
-        food_item = re.sub(r'^[\d\s/¼½¾\-]+\s*(?:cup|cups|tablespoon|tablespoons|tbsp|tsp|teaspoon|teaspoons|gram|grams|g|kg|ml|oz|ounce|ounces|lb|pound|pounds|pinch|dash)\s+', '', food_item)
-        
+        food_item = re.sub(
+            r'^[\d\s/¼½¾\-]+\s*(?:cup|cups|tablespoon|tablespoons|tbsp|tsp|teaspoon|teaspoons|gram|grams|g|kg|ml|oz|ounce|ounces|lb|pound|pounds|pinch|dash)\s+of\s+',
+            '', ingredient)
+        food_item = re.sub(
+            r'^[\d\s/¼½¾\-]+\s*(?:cup|cups|tablespoon|tablespoons|tbsp|tsp|teaspoon|teaspoons|gram|grams|g|kg|ml|oz|ounce|ounces|lb|pound|pounds|pinch|dash)\s+',
+            '', food_item)
+
         # Remove additional annotations
         food_item = re.sub(r'\(.*?\)', '', food_item)
         food_item = re.sub(r',.*$', '', food_item)
         food_item = re.sub(r'for.*$', '', food_item)
-        
+
         if food_item.strip():
             cleaned_ingredients.append(food_item.strip())
-    
+
     return cleaned_ingredients
+
 
 def calculate_macronutrients(ingredients_list):
     """
     Calculate approximate macronutrients based on ingredients
-    
+
     Args:
         ingredients_list: List of ingredients
-        
+
     Returns:
         Dictionary with estimated macronutrients
     """
     # This is a simplified approximation
     # For a real application, you'd use a nutrition database API
-    
+
     # Default values
     macros = {
         "calories": 0,
@@ -189,7 +199,7 @@ def calculate_macronutrients(ingredients_list):
         "carbs": 0,
         "fat": 0
     }
-    
+
     # Simple mapping of common ingredients to macros
     # Format: "ingredient": [calories, protein(g), carbs(g), fat(g)]
     macro_mapping = {
@@ -219,11 +229,11 @@ def calculate_macronutrients(ingredients_list):
         "nuts": [607, 21, 21, 54],
         "tofu": [76, 8, 2, 4.8],
     }
-    
+
     # Analyze each ingredient
     for ingredient in ingredients_list:
         ingredient_lower = ingredient.lower()
-        
+
         # Check if any known ingredient is in the text
         for food, values in macro_mapping.items():
             if food in ingredient_lower:
@@ -233,5 +243,5 @@ def calculate_macronutrients(ingredients_list):
                 macros["carbs"] += values[2]
                 macros["fat"] += values[3]
                 break
-    
+
     return macros
